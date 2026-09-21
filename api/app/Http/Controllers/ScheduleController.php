@@ -7,28 +7,69 @@ use Illuminate\Support\Facades\DB;
 
 class ScheduleController extends Controller
 {
-    public function getSchedule()
+    /**
+     * Mentett idősávok lekérése az SQLite adatbázisból
+     */
+    public function index()
     {
-        $blocks = DB::table('time_blocks_to_heat')->pluck('time_block');
-        return response()->json($blocks);
+        try {
+            // Beolvassuk az elmentett idősávokat
+            $schedules = DB::table('schedules')->pluck('time_block')->toArray();
+
+            return response()->json([
+                'status' => 'success',
+                'time_blocks' => $schedules
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
-    public function saveSchedule(Request $request)
+    /**
+     * Idősávok mentése és felülírása
+     */
+    public function store(Request $request)
     {
-        $request->validate([
-            'time_blocks' => 'required|array'
-        ]);
+        try {
+            // Kiolvassuk a beérkező tömböt (támogatja a time_blocks és hours kulcsot is)
+            $blocks = $request->input('time_blocks', $request->input('hours', []));
 
-        DB::table('time_blocks_to_heat')->truncate(); // Töröljük a korábbi preferenciákat
+            if (!is_array($blocks)) {
+                $blocks = [];
+            }
 
-        foreach ($request->time_blocks as $block) {
-            DB::table('time_blocks_to_heat')->insert([
-                'time_block' => $block,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            // 1. Töröljük a korábbi rekordokat az adatbázisból (megakadályozza az SQL duplikációs hibát)
+            DB::table('schedules')->delete();
+
+            // 2. Előkészítjük az új rekordokat beszúrásra
+            $dataToInsert = [];
+            foreach ($blocks as $block) {
+                $dataToInsert[] = [
+                    'time_block' => (string)$block,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+
+            // 3. Beszúrjuk az új idősávokat
+            if (!empty($dataToInsert)) {
+                DB::table('schedules')->insert($dataToInsert);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Idősávok sikeresen frissítve!',
+                'time_blocks' => $blocks
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
         }
-
-        return response()->json(['message' => 'Idősávok elmentve!']);
     }
 }
